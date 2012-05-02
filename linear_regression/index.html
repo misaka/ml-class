@@ -22,37 +22,37 @@ var points_range = {
 };
 var cost_data;
 var cost_param_ranges = {
-    x: { min: -10, max: 10, step: 0.5 },
-    y: { min: -10, max: 10, step: 0.5 },
+    x: { min: -0.5, max: 4.5, step: 0.1 },
+    y: { min: -0.5, max: 4.5, step: 0.1 },
 };
     
 
 function create_linear_func(params) {
     return function(x) {
-        return params[0] * x + params[1];
+        return params[0] + params[1] * x;
     };
-};
-
-
-function calculate_cost_data(points, create_func, params) {
-    func = create_func(params);
-    var sum = points.reduce(function(acc, point) {
-        return acc + Math.pow(func(point[0]) - point[1], 2);
-    }, 0);
-    return 1 / ( 2 * points.length ) * sum;
 };
 
 
 function calculate_cost_data_2d(points, func) {
     var cost_data = [];
-    for(param0 = cost_param_ranges.x.min;
-        param0 <= cost_param_ranges.x.max;
-        param0 += cost_param_ranges.x.step) {
-        // We only want a 2d plot for y (param1) is a constant of 0.
-        cost = calculate_cost_data(points, func, [param0, 0]);
-        cost_data.push([param0, cost]);
+    for(param1 = cost_param_ranges.x.min;
+        param1 <= cost_param_ranges.x.max;
+        param1 += cost_param_ranges.x.step) {
+        // We only want a 2d plot so y (param0) is a constant of 0.
+        cost = calculate_cost_for_params(points, func, [0, param1]);
+        cost_data.push([param1, cost]);
     }
     return cost_data;
+};
+
+
+function calculate_cost_for_params(points, create_func, params) {
+    hypothesis = create_func(params);
+    var sum = points.reduce(function(acc, point) {
+        return acc + Math.pow(hypothesis(point[0]) - point[1], 2);
+    }, 0);
+    return ( 1 / ( 2 * points.length ) ) * sum;
 };
 
 
@@ -64,25 +64,48 @@ function generate_cost_data() {
 }
 
 
-function find_best_fit(cost_data) {
-    var best_point = [ null, null ];
-    for(var cost_point in cost_data) {
-        if( best_point[1] == null || cost_point[1] < best_point[1] ) {
-            best_point = cost_point;
+function find_best_fitting_params(cost_data) {
+    var best_cost = [ null, null ];
+    for(var i=0; i < cost_data.length; i++) {
+        if( best_cost[1] == null || cost_data[i][1] < best_cost[1] ) {
+            best_cost = cost_data[i];
         }
     }
-    return best_point;
+    return [0,best_cost[0]];
 }
 
 
-function generate_cost_line_data() {
-    best_point = find_best_fit(cost_data);
+function generate_cost_line_points() {
+    best_params = find_best_fitting_params(cost_data);
 
-    linear_func = create_linear_func(best_point);
+    linear_func = create_linear_func(best_params);
     start_point = [points_range.x.min, Number(linear_func(points_range.x.min))];
     end_point   = [points_range.x.max, Number(linear_func(points_range.x.max))];
 
     return([start_point, end_point]);
+}
+
+
+function plot_points() {
+    plot.setData([{
+        data: points,
+        color: "red"
+    },
+    {
+        data: generate_cost_line_points(),
+        color: "blue",
+        lines: { show: true }
+    }]);
+    plot.draw();
+}
+
+
+function plot_cost_data() {
+    cost_plot.setData([{
+        data: cost_data,
+        color: "green",
+    }]);
+    cost_plot.draw();
 }
 
 
@@ -98,9 +121,10 @@ $(function () {
                     points: { show: true }
             },
             {
-                    data: generate_cost_line_data(),
+                    data: generate_cost_line_points(),
                     color: "blue",
-                    lines: { show: true }
+                    lines: { show: true },
+                    points: { show: false }
             } ],
             {
                 series: {
@@ -117,10 +141,11 @@ $(function () {
                color: "green" } ], {
                series: {
                    lines: { show: true },
-                   points: { show: true }
+                   points: { show: false }
                },
                grid: { hoverable: false, clickable: false },
                xaxis: cost_param_ranges.x,
+               yaxis: cost_param_ranges.y,
              });
 
     var currentPoint = null;
@@ -132,29 +157,31 @@ $(function () {
     });
 
     $("#data_plot").bind("click", function (event) {
+        if(currentPoint == null)
+            return;
         points.push(currentPoint);
         $('#points').val(JSON.stringify(points, null, 2));
         $("#clickdata").text("Added point " + currentPoint + ".");
-        plot.setData([{
-            data: points,
-            color: "red"
-        },
-        {
-            data: generate_cost_line_data(),
-            color: "blue",
-            lines: { show: true }
-        }]);
-        plot.draw();
 
+        plot_cost_data();
         generate_cost_data();
-        cost_plot.setData([{
-            data: cost_data,
-            color: "green",
-        }]);
-        
-        cost_plot.draw();
+        plot_points();
+    });
+
+    $('#points').change(function() {
+        points = JSON.parse($('#points').val());
+        plot_cost_data();
+        generate_cost_data();
+        plot_points();
     });
 });
+// [
+//  [3,2],
+//  [1,2],
+//  [0,1],
+//  [4,3]
+// ]
+
 
 </script>
   </body>
