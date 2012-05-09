@@ -40,28 +40,20 @@ function calculate_cost_data_2d(points, func) {
         param1 <= cost_param_ranges.x.max;
         param1 += cost_param_ranges.x.step) {
         // We only want a 2d plot so y (param0) is a constant of 0.
-        cost = calculate_cost_for_params(points, func, [0, param1]);
+        cost = cost_of_params([0, param1], points, func);
         cost_data.push([param1, cost]);
     }
     return cost_data;
 };
 
 
-function calculate_cost_for_params(points, create_func, params) {
+function cost_of_params(params, points, create_func) {
     hypothesis = create_func(params);
     var sum = points.reduce(function(acc, point) {
         return acc + Math.pow(hypothesis(point[0]) - point[1], 2);
     }, 0);
     return ( 1 / ( 2 * points.length ) ) * sum;
 };
-
-
-function generate_cost_data() {
-    cost_data = calculate_cost_data_2d(
-        points,
-        create_linear_func
-    );
-}
 
 
 function find_best_fitting_params(cost_data) {
@@ -75,32 +67,48 @@ function find_best_fitting_params(cost_data) {
 }
 
 
-function generate_cost_line_points() {
-    best_params = find_best_fitting_params(cost_data);
-
-    linear_func = create_linear_func(best_params);
-    start_point = [points_range.x.min, Number(linear_func(points_range.x.min))];
-    end_point   = [points_range.x.max, Number(linear_func(points_range.x.max))];
-
-    return([start_point, end_point]);
+function find_best_fitting_params_for_points(points) {
+    cost_data = calculate_cost_data_2d(
+        points,
+        create_linear_func
+    );
+    return find_best_fitting_params(cost_data);
 }
 
 
-function plot_points() {
+function calculate_and_plot_points_and_costs() {
+    // First re-plat the points without the hypothesis line.
     plot.setData([{
         data: points,
-        color: "red"
-    },
-    {
-        data: generate_cost_line_points(),
-        color: "blue",
-        lines: { show: true }
+        color: "red",
+        label: "data points",
+        points: { show: true },
+        lines: { show: false },
     }]);
     plot.draw();
-}
 
+    // Now find the best-fitting params for our set of points.
+    best_fit_params = find_best_fitting_params_for_points(points);
+    // And generate the points that will be used for the line that represents
+    // our hypothesis on the points graph.
+    linear_func = create_linear_func(best_fit_params);
+    line_start = [points_range.x.min, Number(linear_func(points_range.x.min))];
+    line_end   = [points_range.x.max, Number(linear_func(points_range.x.max))];
 
-function plot_cost_data() {
+    // Now plot points with the hypothesis line.
+    plot.setData([{
+        data: points,
+        color: "red",
+        label: "data points",
+    }, {
+        data: [line_start, line_end],
+        color: "blue",
+        label: "costs",
+        lines: { show: true },
+        points: { show: false },
+    }]);
+    plot.draw();
+
     cost_plot.setData([{
         data: cost_data,
         color: "green",
@@ -111,34 +119,24 @@ function plot_cost_data() {
 
 $(function () {
     points = [ [ 1, 1 ], [ 2, 2 ], [ 3, 3 ] ];
-    generate_cost_data();
 
     plot = $.plot($("#data_plot"),
-            [ {
-                    data: points,
-                    label: "data points",
-                    color: "red",
-                    points: { show: true }
-            },
-            {
-                    data: generate_cost_line_points(),
-                    color: "blue",
-                    lines: { show: true },
-                    points: { show: false }
-            } ],
+            [],
             {
                 series: {
-                    points: { show: true }
+                    lines: { show: false },
+                    points: { show: true },
                 },
                 grid: { hoverable: true, clickable: true },
                 xaxis: points_range.x,
                 yaxis: points_range.y,
             });
-
     cost_plot = $.plot($("#cost_plot"),
-           [ { data: cost_data,
-               label: "cost",
-               color: "green" } ], {
+                       [ {
+                           // data: cost_data,
+                           // label: "cost",
+                           // color: "green",
+                         } ], {
                series: {
                    lines: { show: true },
                    points: { show: false }
@@ -147,6 +145,7 @@ $(function () {
                xaxis: cost_param_ranges.x,
                yaxis: cost_param_ranges.y,
              });
+    calculate_and_plot_points_and_costs();
 
     var currentPoint = null;
     $("#data_plot").bind("plothover", function (event, pos, item) {
@@ -162,26 +161,14 @@ $(function () {
         points.push(currentPoint);
         $('#points').val(JSON.stringify(points, null, 2));
         $("#clickdata").text("Added point " + currentPoint + ".");
-
-        plot_cost_data();
-        generate_cost_data();
-        plot_points();
+        calculate_and_plot_points_and_costs();
     });
 
     $('#points').change(function() {
         points = JSON.parse($('#points').val());
-        plot_cost_data();
-        generate_cost_data();
-        plot_points();
+        calculate_and_plot_points_and_costs();
     });
 });
-// [
-//  [3,2],
-//  [1,2],
-//  [0,1],
-//  [4,3]
-// ]
-
 
 </script>
   </body>
