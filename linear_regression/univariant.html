@@ -75,6 +75,31 @@ function find_best_fitting_params_for_points(points) {
     return find_best_fitting_params(cost_data);
 }
 
+function find_best_fitting_params_for_points_using_liner_regression(points) {
+    var last_params = [];
+    var params = [0, 0];
+    var change_rate = 0.1;
+    var i = 0;
+    var max_iterations = 1000;
+
+    while(params[0] != last_params[0] || params[1] != last_params[1]) {
+        last_params[0] = params[0];
+        last_params[1] = params[1];
+        hypothesis = create_linear_func(params)
+        total_hypothesis_cost = points.reduce(function(acc, point) {
+            return acc + (hypothesis(point[0]) - point[1]) * point[1];
+        }, 0);
+        params[1] =
+            last_params[1]
+            - (change_rate 
+               * (1 / points.length)
+               * total_hypothesis_cost);
+        if(++i > max_iterations)
+            break;
+    }
+    return params;
+}
+
 
 function calculate_and_plot_points_and_costs() {
     // First re-plat the points without the hypothesis line.
@@ -88,7 +113,7 @@ function calculate_and_plot_points_and_costs() {
     plot.draw();
 
     // Now find the best-fitting params for our set of points.
-    best_fit_params = find_best_fitting_params_for_points(points);
+    best_fit_params = find_best_fitting_params_for_points_using_liner_regression(points);
     // And generate the points that will be used for the line that represents
     // our hypothesis on the points graph.
     linear_func = create_linear_func(best_fit_params);
