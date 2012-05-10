@@ -28,72 +28,32 @@ var cost_param_ranges = {
     
 
 function create_linear_func(params) {
-    return function(x) {
-        return params[0] + params[1] * x;
+    return function(point) {
+        return params[0] + params[1] * point.x;
     };
 };
 
 
-function calculate_cost_data_2d(points, func) {
-    var cost_data = [];
-    for(param1 = cost_param_ranges.x.min;
-        param1 <= cost_param_ranges.x.max;
-        param1 += cost_param_ranges.x.step) {
-        // We only want a 2d plot so y (param0) is a constant of 0.
-        cost = cost_of_params([0, param1], points, func);
-        cost_data.push([param1, cost]);
-    }
-    return cost_data;
-};
-
-
-function cost_of_params(params, points, create_func) {
-    hypothesis = create_func(params);
-    var sum = points.reduce(function(acc, point) {
-        return acc + Math.pow(hypothesis(point[0]) - point[1], 2);
-    }, 0);
-    return ( 1 / ( 2 * points.length ) ) * sum;
-};
-
-
-function find_best_fitting_params(cost_data) {
-    var best_cost = [ null, null ];
-    for(var i=0; i < cost_data.length; i++) {
-        if( best_cost[1] == null || cost_data[i][1] < best_cost[1] ) {
-            best_cost = cost_data[i];
-        }
-    }
-    return [0,best_cost[0]];
-}
-
-
 function find_best_fitting_params_for_points(points) {
-    cost_data = calculate_cost_data_2d(
-        points,
-        create_linear_func
-    );
-    return find_best_fitting_params(cost_data);
-}
-
-function find_best_fitting_params_for_points_using_liner_regression(points) {
     var last_params = [];
     var params = [0, 0];
     var change_rate = 0.1;
     var i = 0;
-    var max_iterations = 1000;
+    var max_iterations = 100;
 
     while(params[0] != last_params[0] || params[1] != last_params[1]) {
         last_params[0] = params[0];
         last_params[1] = params[1];
-        hypothesis = create_linear_func(params)
-        total_hypothesis_cost = points.reduce(function(acc, point) {
-            return acc + (hypothesis(point[0]) - point[1]) * point[1];
-        }, 0);
+        h = hypothesis = create_linear_func(params)
         params[1] =
             last_params[1]
             - (change_rate 
                * (1 / points.length)
-               * total_hypothesis_cost);
+               * points.reduce(function(a,p) {
+                   // console.log("params = " + JSON.stringify(params) + "; p = " + JSON.stringify(p) + "; h(p) = " + h(p) + "; result = " + ((h(p) - p.y) * p.x));
+                   return a + (h(p) - p.y) * p.x;
+               }, 0)
+              );
         if(++i > max_iterations)
             break;
     }
@@ -104,7 +64,7 @@ function find_best_fitting_params_for_points_using_liner_regression(points) {
 function calculate_and_plot_points_and_costs() {
     // First re-plat the points without the hypothesis line.
     plot.setData([{
-        data: points,
+        data: points.map(function(p){return [p.x, p.y]}),
         color: "red",
         label: "data points",
         points: { show: true },
@@ -112,17 +72,23 @@ function calculate_and_plot_points_and_costs() {
     }]);
     plot.draw();
 
+    // TODO: There is still a bug ... plot about 14-15 more points and the line
+    //       goes a bit haywire. Actually, can happen after just 9 new points
+    //       when whey're clustered close together.
     // Now find the best-fitting params for our set of points.
-    best_fit_params = find_best_fitting_params_for_points_using_liner_regression(points);
+    best_fit_params = find_best_fitting_params_for_points(points);
+    // best_fit_params = [0, 3];
     // And generate the points that will be used for the line that represents
     // our hypothesis on the points graph.
     linear_func = create_linear_func(best_fit_params);
-    line_start = [points_range.x.min, Number(linear_func(points_range.x.min))];
-    line_end   = [points_range.x.max, Number(linear_func(points_range.x.max))];
+    line_start = [points_range.x.min, Number(linear_func({x: points_range.x.min,
+                                                          y: 0}))];
+    line_end   = [points_range.x.max, Number(linear_func({x: points_range.x.max,
+                                                          y: 0}))];
 
     // Now plot points with the hypothesis line.
     plot.setData([{
-        data: points,
+        data: points.map(function(p){return [p.x, p.y]}),
         color: "red",
         label: "data points",
     }, {
@@ -143,10 +109,14 @@ function calculate_and_plot_points_and_costs() {
 
 
 $(function () {
-    points = [ [ 1, 1 ], [ 2, 2 ], [ 3, 3 ] ];
+    points = [
+        { x: 1, y: 1 },
+        { x: 2, y: 2 },
+        { x: 3, y: 3 },
+    ];
 
     plot = $.plot($("#data_plot"),
-            [],
+            [{}],
             {
                 series: {
                     lines: { show: false },
@@ -157,11 +127,7 @@ $(function () {
                 yaxis: points_range.y,
             });
     cost_plot = $.plot($("#cost_plot"),
-                       [ {
-                           // data: cost_data,
-                           // label: "cost",
-                           // color: "green",
-                         } ], {
+                       [{}], {
                series: {
                    lines: { show: true },
                    points: { show: false }
@@ -174,10 +140,10 @@ $(function () {
 
     var currentPoint = null;
     $("#data_plot").bind("plothover", function (event, pos, item) {
-        currentPoint = [Math.round(pos.x * 100) / 100,
-                        Math.round(pos.y * 100) / 100]
-        $("#x").text(currentPoint[0])
-        $("#y").text(currentPoint[1])
+        currentPoint = { x: Math.round(pos.x * 100) / 100,
+                         y: Math.round(pos.y * 100) / 100};
+        $("#x").text(currentPoint.x);
+        $("#y").text(currentPoint.y);
     });
 
     $("#data_plot").bind("click", function (event) {
