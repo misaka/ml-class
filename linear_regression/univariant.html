@@ -4,14 +4,22 @@
     <script language="javascript" type="text/javascript" src="../js/jquery.flot.min.js"></script>
   </head>
   <body>
-    <div id="data_plot" style="width:600px;height:300px"></div>
-    <div id="cost_plot" style="width:600px;height:300px"></div>
 
-    <p id="hoverdata">Position:
-    <span id="x">0</span>, <span id="y">0</span><br />
-    Click: <span id="clickdata"></span></p>
 
-    <textarea cols=80 rows=20 id="points"></textarea>
+    <div id="plots">
+      <div id="data_plot" style="width:600px;height:300px"></div>
+      <div id="cost_plot" style="width:600px;height:300px"></div>
+
+      <p id="hoverdata">Position:
+      <span id="x">0</span>, <span id="y">0</span><br />
+      Click: <span id="clickdata"></span></p>
+      <div>
+        <pre id="stats"></pre>
+      </div>
+      <div>
+        <textarea  id="points" cols=40 rows=20 id="points"></textarea>
+      </div>
+    </div>
 
 <script type="text/javascript">
 var plot, cost_plot;
@@ -35,29 +43,82 @@ function create_linear_func(params) {
 
 
 function find_best_fitting_params_for_points(points) {
-    var last_params = [];
+    var last_params = [0, null];
     var params = [0, 0];
-    var change_rate = 0.1;
+    var change_rate = 0.01;
     var i = 0;
-    var max_iterations = 100;
+    var max_iterations = 10000;
+    if(cost_plot)
+        cost_data = [];
 
-    while(params[0] != last_params[0] || params[1] != last_params[1]) {
-        last_params[0] = params[0];
+    while(params[1] != last_params[1]) {
         last_params[1] = params[1];
-        h = hypothesis = create_linear_func(params)
+        h = hypothesis = create_linear_func(last_params)
         params[1] =
             last_params[1]
             - (change_rate 
                * (1 / points.length)
                * points.reduce(function(a,p) {
-                   // console.log("params = " + JSON.stringify(params) + "; p = " + JSON.stringify(p) + "; h(p) = " + h(p) + "; result = " + ((h(p) - p.y) * p.x));
                    return a + (h(p) - p.y) * p.x;
                }, 0)
               );
-        if(++i > max_iterations)
+        if(params[1] == null || params[1] == NaN
+           || params[1] == Infinity || params[1] == -Infinity) {
+            console.log("invalid parameter! try adjusting change_rate, maybe increase it");
+            debug_param_data(last_params, params, h);
             break;
+        }
+        if(cost_plot)
+            cost_data.push([params[1], cost_of_param(params[1], points, hypothesis)]);
+        if(++i > max_iterations) {
+            console.log("max iterations reached, bailing");
+            debug_param_data(last_params, params, h);
+            break;
+        }
     }
+    if(cost_plot)
+        plot_param_cost();
+    show_stats(params, i);
     return params;
+}
+
+
+function debug_param_data(last_params, params, hyphothesis) {
+    h = hypothesis;
+    console.log("  last params: " + JSON.stringify(last_params));
+    console.log("  params: " + JSON.stringify(params));
+    console.log("  total cost: " + JSON.stringify(points.reduce(function(a,p) {
+        return a + (h(p) - p.y) * p.x;
+    }, 0)));
+    for(p in points) {
+        console.log("    point " + JSON.stringify(points[p]) + " cost: " + h(p));
+    }
+}
+
+
+function show_stats(params, iterations) {
+    $('#stats').text("Best fit params:\n" + JSON.stringify(params) + "\n"
+                     + "Iterations: " + iterations + "\n");
+}
+
+
+function cost_of_param(param, points, hypothesis) {
+    // hypothesis = create_func(param);
+    var sum = points.reduce(function(acc, point) {
+        return acc + Math.pow(hypothesis(point) - point.y, 2);
+    }, 0);
+    return ( 1 / ( 2 * points.length ) ) * sum;
+};
+
+
+function plot_param_cost() {
+    cost_plot.setData([{
+        data: cost_data,
+        color: "green",
+        lines: { show: false },
+        points: { show: true },
+    }]);
+    cost_plot.draw();
 }
 
 
@@ -72,9 +133,6 @@ function calculate_and_plot_points_and_costs() {
     }]);
     plot.draw();
 
-    // TODO: There is still a bug ... plot about 14-15 more points and the line
-    //       goes a bit haywire. Actually, can happen after just 9 new points
-    //       when whey're clustered close together.
     // Now find the best-fitting params for our set of points.
     best_fit_params = find_best_fitting_params_for_points(points);
     // best_fit_params = [0, 3];
@@ -103,6 +161,8 @@ function calculate_and_plot_points_and_costs() {
     cost_plot.setData([{
         data: cost_data,
         color: "green",
+        lines: { show: false },
+        points: { show: true },
     }]);
     cost_plot.draw();
 }
@@ -137,6 +197,7 @@ $(function () {
                yaxis: cost_param_ranges.y,
              });
     calculate_and_plot_points_and_costs();
+    $('#points').val(JSON.stringify(points, null, 2));
 
     var currentPoint = null;
     $("#data_plot").bind("plothover", function (event, pos, item) {
@@ -150,8 +211,8 @@ $(function () {
         if(currentPoint == null)
             return;
         points.push(currentPoint);
-        $('#points').val(JSON.stringify(points, null, 2));
-        $("#clickdata").text("Added point " + currentPoint + ".");
+        $('#points').text(JSON.stringify(points, null, 2));
+        $("#clickdata").text("Added point " + JSON.stringify(currentPoint) + ".");
         calculate_and_plot_points_and_costs();
     });
 
