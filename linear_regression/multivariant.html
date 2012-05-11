@@ -1,0 +1,237 @@
+<html>
+  <head>
+    <script language="javascript" type="text/javascript" src="../js/jquery.min.js"></script>
+    <script language="javascript" type="text/javascript" src="../js/jquery.flot.min.js"></script>
+  </head>
+  <body>
+
+
+    <div id="plots">
+      <div id="data_plot" style="width:600px;height:300px"></div>
+      <div id="cost_plot" style="width:600px;height:300px"></div>
+
+      <p id="hoverdata">Position:
+      <span id="x">0</span>, <span id="y">0</span><br />
+      Click: <span id="clickdata"></span></p>
+      <div>
+        <pre id="stats"></pre>
+      </div>
+      <div>
+        <textarea  id="points" cols=40 rows=20 id="points"></textarea>
+      </div>
+    </div>
+
+<script type="text/javascript">
+var plot, cost_plot;
+var points, cost_line_points;
+var points_range = {
+    x: { min: 0, max: 10 },
+    y: { min: 0, max: 10 }
+};
+var cost_data;
+var cost_param_ranges = {
+    x: { min: -0.5, max: 4.5, step: 0.1 },
+    y: { min: -0.5, max: 4.5, step: 0.1 },
+};
+    
+
+function create_linear_func(params) {
+    return function(point) {
+        return params[0] + params[1] * point.x;
+    };
+};
+
+
+function find_best_fitting_params_for_points(points) {
+    var last_params = [0, 0];
+    var params = [0, 0];
+    var change_rate = 0.06;
+    var i = 0;
+    var max_iterations = 10000;
+    if(cost_plot)
+        cost_data = [];
+
+    do {
+        last_params[0] = params[0];
+        last_params[1] = params[1];
+        h = hypothesis = create_linear_func(last_params)
+        params[0] =
+            last_params[0]
+            - (change_rate 
+               * (1 / points.length)
+               * points.reduce(function(a,p) {
+                   return a + (h(p) - p.y);
+               }, 0)
+              );
+        params[1] =
+            last_params[1]
+            - (change_rate 
+               * (1 / points.length)
+               * points.reduce(function(a,p) {
+                   return a + (h(p) - p.y) * p.x;
+               }, 0)
+              );
+        if(params[1] == null || params[1] == NaN
+           || params[1] == Infinity || params[1] == -Infinity) {
+            console.log("invalid parameter! try adjusting change_rate, maybe increase it");
+            debug_param_data(last_params, params, h);
+            break;
+        }
+        if(cost_plot)
+            cost_data.push([params[1], cost_of_param(params[1], points, hypothesis)]);
+        if(++i > max_iterations) {
+            console.log("max iterations reached, bailing");
+            debug_param_data(last_params, params, h);
+            break;
+        }
+    } while(params[0] != last_params[0]
+            && params[1] != last_params[1]);
+    if(cost_plot)
+        plot_param_cost();
+    show_stats(params, i);
+    return params;
+}
+
+
+function debug_param_data(last_params, params, hyphothesis) {
+    h = hypothesis;
+    console.log("  last params: " + JSON.stringify(last_params));
+    console.log("  params: " + JSON.stringify(params));
+    console.log("  total cost: " + JSON.stringify(points.reduce(function(a,p) {
+        return a + (h(p) - p.y) * p.x;
+    }, 0)));
+    for(p in points) {
+        console.log("    point " + JSON.stringify(points[p]) + " cost: " + h(p));
+    }
+}
+
+
+function show_stats(params, iterations) {
+    $('#stats').text("Best fit params:\n" + JSON.stringify(params) + "\n"
+                     + "Iterations: " + iterations + "\n");
+}
+
+
+function cost_of_param(param, points, hypothesis) {
+    // hypothesis = create_func(param);
+    var sum = points.reduce(function(acc, point) {
+        return acc + Math.pow(hypothesis(point) - point.y, 2);
+    }, 0);
+    return ( 1 / ( 2 * points.length ) ) * sum;
+};
+
+
+function plot_param_cost() {
+    cost_plot.setData([{
+        data: cost_data,
+        color: "green",
+        lines: { show: false },
+        points: { show: true },
+    }]);
+    cost_plot.draw();
+}
+
+
+function calculate_and_plot_points_and_costs() {
+    // First re-plat the points without the hypothesis line.
+    plot.setData([{
+        data: points.map(function(p){return [p.x, p.y]}),
+        color: "red",
+        label: "data points",
+        points: { show: true },
+        lines: { show: false },
+    }]);
+    plot.draw();
+
+    // Now find the best-fitting params for our set of points.
+    best_fit_params = find_best_fitting_params_for_points(points);
+    // best_fit_params = [0, 3];
+    // And generate the points that will be used for the line that represents
+    // our hypothesis on the points graph.
+    linear_func = create_linear_func(best_fit_params);
+    line_start = [points_range.x.min, Number(linear_func({x: points_range.x.min,
+                                                          y: 0}))];
+    line_end   = [points_range.x.max, Number(linear_func({x: points_range.x.max,
+                                                          y: 0}))];
+
+    // Now plot points with the hypothesis line.
+    plot.setData([{
+        data: points.map(function(p){return [p.x, p.y]}),
+        color: "red",
+        label: "data points",
+    }, {
+        data: [line_start, line_end],
+        color: "blue",
+        label: "costs",
+        lines: { show: true },
+        points: { show: false },
+    }]);
+    plot.draw();
+
+    cost_plot.setData([{
+        data: cost_data,
+        color: "green",
+        lines: { show: false },
+        points: { show: true },
+    }]);
+    cost_plot.draw();
+}
+
+
+$(function () {
+    points = [
+        { x: 1, y: 1 },
+        { x: 2, y: 2 },
+        { x: 3, y: 3 },
+    ];
+
+    plot = $.plot($("#data_plot"),
+            [{}],
+            {
+                series: {
+                    lines: { show: false },
+                    points: { show: true },
+                },
+                grid: { hoverable: true, clickable: true },
+                xaxis: points_range.x,
+                yaxis: points_range.y,
+            });
+    cost_plot = $.plot($("#cost_plot"),
+                       [{}], {
+               series: {
+                   lines: { show: true },
+                   points: { show: false }
+               },
+               grid: { hoverable: false, clickable: false },
+               xaxis: cost_param_ranges.x,
+               yaxis: cost_param_ranges.y,
+             });
+    calculate_and_plot_points_and_costs();
+    $('#points').val(JSON.stringify(points, null, 2));
+
+    var currentPoint = null;
+    $("#data_plot").bind("plothover", function (event, pos, item) {
+        currentPoint = { x: Math.round(pos.x * 100) / 100,
+                         y: Math.round(pos.y * 100) / 100};
+        $("#x").text(currentPoint.x);
+        $("#y").text(currentPoint.y);
+    });
+
+    $("#data_plot").bind("click", function (event) {
+        if(currentPoint == null)
+            return;
+        points.push(currentPoint);
+        $('#points').text(JSON.stringify(points, null, 2));
+        $("#clickdata").text("Added point " + JSON.stringify(currentPoint) + ".");
+        calculate_and_plot_points_and_costs();
+    });
+
+    $('#points').change(function() {
+        points = JSON.parse($('#points').val());
+        calculate_and_plot_points_and_costs();
+    });
+});
+
+</script>
+  </body>
+</html>
