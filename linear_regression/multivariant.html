@@ -2,22 +2,54 @@
   <head>
     <script language="javascript" type="text/javascript" src="../js/jquery.min.js"></script>
     <script language="javascript" type="text/javascript" src="../js/jquery.flot.min.js"></script>
+    <script language="javascript" type="text/javascript" src="../js/sylvester.js"></script>
+
+    <style type="text/css">
+#stats    {
+//   float:left;
+  font-size: small;
+  font-color: grey;
+  // border:1px solid green;
+}
+#stats dt {
+  clear:left;
+  float:left;
+  text-align:right;
+  // border-top:solid 1px black;
+  width:30ex;
+  // border:1px solid red;
+  padding-right:1ex;
+}
+#stats dt:after { content:":" }
+#stats dd {
+  float:left;
+  // border-top:solid 1px black;
+  width:20ex;
+  margin-left:0;
+  // border:1px solid blue;
+}
+#stats dt:first-child { border-top:none; }
+#stats dd:nth-child(2) { border-top:none; }
+    </style>
   </head>
   <body>
-
-
     <div id="content">
       <div id="plots">
         <div id="data_plot" style="float:left;width:600px;height:300px"></div>
         <div id="cost_plot" style="float:left;width:300px;height:300px"></div>
       </div>
 
-      <p id="hoverdata" style="clear:both;">Position:
-      <span id="x">0</span>, <span id="y">0</span><br />
+      <div style="clear:both;" />
+      <dl id="stats">
+        <dt>Position</dt>                  <dd id="position" />
+        <dt>Best Fit Params</dt>           <dd id="best_fit_params" />
+        <dt>Time Taken to Find Params</dt> <dd id="best_fit_time" />
+        <dt>Iterations</dt>                <dd id="iterations" />
+        <dt>Total Elapsed Time</dt>        <dd id="total_elapsed_time" />
+      </dl>
+
+      <div style="clear:both;" />
       Click: <span id="clickdata"></span></p>
-      <div>
-        <pre id="stats"></pre>
-      </div>
       <div>
         <textarea  id="points" cols=40 rows=20 id="points"></textarea>
       </div>
@@ -45,6 +77,11 @@ function create_linear_func(params) {
 };
 
 
+function set_stat(name, value) {
+    $('#' + name).text(value);
+}
+
+
 function find_best_fitting_params_for_points(points) {
     var last_params = [0, 0];
     var params = [0, 0];
@@ -54,6 +91,7 @@ function find_best_fitting_params_for_points(points) {
     if(plot_cost)
         cost_data = [];
 
+    var start_time = new Date;
     do {
         last_params[0] = params[0];
         last_params[1] = params[1];
@@ -89,9 +127,12 @@ function find_best_fitting_params_for_points(points) {
         }
     } while(params[0] != last_params[0]
             && params[1] != last_params[1]);
+    var elapsed_time = new Date - start_time;
     if(plot_cost)
         plot_param_cost();
-    show_stats(params, i);
+    set_stat('best_fit_params', params[0].toPrecision(4) + "," + params[1].toPrecision(4));
+    set_stat('best_fit_time', elapsed_time / 1000 + "s");
+    set_stat('iterations', i);
     return params;
 }
 
@@ -106,12 +147,6 @@ function debug_param_data(last_params, params, hyphothesis) {
     for(p in points) {
         console.log("    point " + JSON.stringify(points[p]) + " cost: " + h(p));
     }
-}
-
-
-function show_stats(params, iterations) {
-    $('#stats').text("Best fit params:\n" + JSON.stringify(params) + "\n"
-                     + "Iterations: " + iterations + "\n");
 }
 
 
@@ -135,27 +170,13 @@ function plot_param_cost() {
                 points: { show: true }
             },
             grid: { hoverable: false, clickable: false },
-            // xaxis: cost_param_ranges.x,
-            // yaxis: cost_param_ranges.y,
         });
-    // cost_plot.setData([{
-    //     data: cost_data,
-    //     color: "green",
-    //     lines: { show: false },
-    //     points: { show: true },
-    // }]);
-    // cost_plot.draw();
-    // cost_plot.setData([{
-    //     data: cost_data,
-    //     color: "green",
-    //     lines: { show: false },
-    //     points: { show: true },
-    // }]);
-    // cost_plot.draw();
 }
 
 
 function calculate_and_plot_points_and_costs() {
+    var start_time = new Date;
+
     // First re-plat the points without the hypothesis line.
     plot.setData([{
         data: points.map(function(p){return [p.x, p.y]}),
@@ -168,7 +189,6 @@ function calculate_and_plot_points_and_costs() {
 
     // Now find the best-fitting params for our set of points.
     best_fit_params = find_best_fitting_params_for_points(points);
-    // best_fit_params = [0, 3];
     // And generate the points that will be used for the line that represents
     // our hypothesis on the points graph.
     linear_func = create_linear_func(best_fit_params);
@@ -191,6 +211,7 @@ function calculate_and_plot_points_and_costs() {
     }]);
     plot.draw();
 
+    set_stat("total_elapsed_time", (new Date - start_time)/1000 + "s");
 }
 
 
@@ -220,8 +241,7 @@ $(function () {
     $("#data_plot").bind("plothover", function (event, pos, item) {
         currentPoint = { x: Math.round(pos.x * 100) / 100,
                          y: Math.round(pos.y * 100) / 100};
-        $("#x").text(currentPoint.x);
-        $("#y").text(currentPoint.y);
+        set_stat("position", "x: " + currentPoint.x + " y:" + currentPoint.y);
     });
 
     $("#data_plot").bind("click", function (event) {
