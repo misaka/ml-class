@@ -6,27 +6,21 @@
 
     <style type="text/css">
 #stats    {
-//   float:left;
   font-size: small;
   font-color: grey;
-  // border:1px solid green;
 }
 #stats dt {
   clear:left;
   float:left;
   text-align:right;
-  // border-top:solid 1px black;
   width:30ex;
-  // border:1px solid red;
   padding-right:1ex;
 }
 #stats dt:after { content:":" }
 #stats dd {
   float:left;
-  // border-top:solid 1px black;
   width:20ex;
   margin-left:0;
-  // border:1px solid blue;
 }
 #stats dt:first-child { border-top:none; }
 #stats dd:nth-child(2) { border-top:none; }
@@ -71,8 +65,11 @@ var cost_param_ranges = {
     
 
 function create_linear_func(params) {
-    return function(point) {
-        return params[0] + params[1] * point.x;
+    var params_matrix = $M(params).transpose();
+    return function(variables) {
+        if(typeof(variables) == "number")
+            variables = [variables];
+        return params_matrix.x($V(variables)).e(1);
     };
 };
 
@@ -93,25 +90,21 @@ function find_best_fitting_params_for_points(points) {
 
     var start_time = new Date;
     do {
-        last_params[0] = params[0];
-        last_params[1] = params[1];
-        h = hypothesis = create_linear_func(last_params)
-        params[0] =
-            last_params[0]
-            - (change_rate 
-               * (1 / points.length)
-               * points.reduce(function(a,p) {
-                   return a + (h(p) - p.y);
-               }, 0)
-              );
-        params[1] =
-            last_params[1]
-            - (change_rate 
-               * (1 / points.length)
-               * points.reduce(function(a,p) {
-                   return a + (h(p) - p.y) * p.x;
-               }, 0)
-              );
+        last_params = params.slice();
+        h = hypothesis = create_linear_func(last_params.slice())
+
+        for(index in params) {
+            params[index] =
+                last_params[index]
+                - (change_rate 
+                   * (1 / points.length)
+                   * points.reduce(function(a,p) {
+                       var variables = [1, p.x];
+                       return a + (h([1,p.x]) - p.y) * variables[index];
+                   }, 0)
+                  );
+        }
+
         if(params[1] == null || params[1] == NaN
            || params[1] == Infinity || params[1] == -Infinity) {
             console.log("invalid parameter! try adjusting change_rate, maybe increase it");
@@ -119,14 +112,13 @@ function find_best_fitting_params_for_points(points) {
             break;
         }
         if(plot_cost)
-            cost_data.push([params[1], cost_of_param(params[1], points, hypothesis)]);
+            cost_data.push([params[1], cost_of_param(params[1], points, h)]);
         if(++i > max_iterations) {
             console.log("max iterations reached, bailing");
             debug_param_data(last_params, params, h);
             break;
         }
-    } while(params[0] != last_params[0]
-            && params[1] != last_params[1]);
+    } while(!!params && !!last_params && (params<last_params || params>last_params));
     var elapsed_time = new Date - start_time;
     if(plot_cost)
         plot_param_cost();
@@ -142,18 +134,17 @@ function debug_param_data(last_params, params, hyphothesis) {
     console.log("  last params: " + JSON.stringify(last_params));
     console.log("  params: " + JSON.stringify(params));
     console.log("  total cost: " + JSON.stringify(points.reduce(function(a,p) {
-        return a + (h(p) - p.y) * p.x;
+        return a + (h([1,p.x]) - p.y) * p.x;
     }, 0)));
     for(p in points) {
-        console.log("    point " + JSON.stringify(points[p]) + " cost: " + h(p));
+        console.log("    point " + JSON.stringify(points[p]) + " cost: " + h([1,p.x]));
     }
 }
 
 
 function cost_of_param(param, points, hypothesis) {
-    // hypothesis = create_func(param);
     var sum = points.reduce(function(acc, point) {
-        return acc + Math.pow(hypothesis(point) - point.y, 2);
+        return acc + Math.pow(hypothesis([1,point.x]) - point.y, 2);
     }, 0);
     return ( 1 / ( 2 * points.length ) ) * sum;
 };
@@ -192,10 +183,8 @@ function calculate_and_plot_points_and_costs() {
     // And generate the points that will be used for the line that represents
     // our hypothesis on the points graph.
     linear_func = create_linear_func(best_fit_params);
-    line_start = [points_range.x.min, Number(linear_func({x: points_range.x.min,
-                                                          y: 0}))];
-    line_end   = [points_range.x.max, Number(linear_func({x: points_range.x.max,
-                                                          y: 0}))];
+    line_start = [points_range.x.min, Number(linear_func([1,points_range.x.min]))];
+    line_end   = [points_range.x.max, Number(linear_func([1,points_range.x.max]))];
 
     // Now plot points with the hypothesis line.
     plot.setData([{
