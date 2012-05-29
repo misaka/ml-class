@@ -52,8 +52,8 @@
 <script type="text/javascript">
 var plot, cost_plot;
 var plot_cost = true;
-var points, cost_line_points;
-var points_range = {
+var cost_line_points;
+var data_range = {
     x: { min: 0, max: 10 },
     y: { min: 0, max: 10 }
 };
@@ -62,13 +62,51 @@ var cost_param_ranges = {
     x: { min: -0.5, max: 4.5, step: 0.1 },
     y: { min: -0.5, max: 4.5, step: 0.1 },
 };
-    
+var house_data = [
+    {
+        size: 1,
+        // size: 2104,
+        bedrooms: 5,
+        floors: 1,
+        age: 45,
+        price: 1,
+        // price: 460000,
+    },
+    {
+        size: 2,
+        // size: 1416,
+        bedrooms: 3,
+        floors: 2,
+        age: 40,
+        price: 2,
+        // price: 232000,
+    },
+    {
+        size: 3,
+        // size: 1534,
+        bedrooms: 3,
+        floors: 2,
+        age: 30,
+        price: 3,
+        // price: 315000,
+    },
+    {
+        size: 4,
+        // size: 852,
+        bedrooms: 2,
+        floors: 1,
+        age: 36,
+        price: 4,
+        // price: 178000,
+    },
+];
+// var house_data_fields = ['size', 'bedrooms', 'floors', 'age', 'price'];
+var house_data_fields = ['size', 'price'];
+
 
 function create_linear_func(params) {
     var params_matrix = $M(params).transpose();
     return function(variables) {
-        if(typeof(variables) == "number")
-            variables = [variables];
         return params_matrix.x($V(variables)).e(1);
     };
 };
@@ -79,14 +117,68 @@ function set_stat(name, value) {
 }
 
 
-function find_best_fitting_params_for_points(points) {
-    var last_params = [0, 0];
-    var params = [0, 0];
-    var change_rate = 0.04;
+var field_info = []
+function process_data(data) {
+    $.each(data, function(idx, row) {
+        for(field_idx in row) {
+            if(!field_info[field_idx])
+                field_info[field_idx] = { values:[] };
+            field_info[field_idx].values.push(row[field_idx]);
+
+            if(field_info[field_idx].min == undefined
+               || row[field_idx] < field_info[field_idx].min)
+                field_info[field_idx].min = row[field_idx];
+            else if(field_info[field_idx].max == undefined
+                    || row[field_idx] > field_info[field_idx].max)
+                field_info[field_idx].max = row[field_idx];
+        }
+    });
+    for(idx in field_info) {
+        var info = field_info[idx];
+        var sum=0, count=0;
+        for(value_idx in info.values) {
+            sum += info.values[value_idx];
+            count++
+        }
+        info.average = sum / count;
+        info.spread = (info.max - info.min) / 2;
+        info.normalise = function(value) {
+            return (value - info.average) / info.spread;
+        }
+        info.denormalise = function(value) {
+            return value * info.spread + info.average;
+        }
+    }
+
+    return $.map(data, function(row, idx) {
+        var processed_row = $.map(row, function(field, field_idx) {
+            console.log("field_info[" + field_idx + "]: " + JSON.stringify(field_info[field_idx]));
+            return field_info[field_idx].normalise(field);
+        });
+        console.log("processed_row: " + processed_row);
+        return {
+            vars: [1].concat(processed_row.slice(0,-1)),
+            goal: row.slice(-1)[0]
+        };
+    });
+}
+
+
+function find_best_fitting_params_for_data(data, debug, iterations) {
+    var last_params;
+    var params = [];
+    var change_rate = 0.1;
     var i = 0;
-    var max_iterations = 10000;
-    if(plot_cost)
-        cost_data = [];
+    if(plot_cost) cost_data = [];
+    if(!iterations) iterations = 10000;
+
+    console.log("data: " + JSON.stringify(data));
+    var working_set = process_data(data);
+    console.log("working_set: " + JSON.stringify(working_set));
+
+    // Instantiate params[] with all 0s.
+    for(var count=0; count <data[0].length; count++)
+        params.push(0);
 
     var start_time = new Date;
     do {
@@ -94,28 +186,31 @@ function find_best_fitting_params_for_points(points) {
         h = hypothesis = create_linear_func(last_params.slice())
 
         for(index in params) {
+            var delta = working_set.reduce(function(a,d) {
+                return a + (h(d.vars) - d.goal) * d.vars[index];
+            }, 0);
             params[index] =
                 last_params[index]
                 - (change_rate 
-                   * (1 / points.length)
-                   * points.reduce(function(a,p) {
-                       var variables = [1, p.x];
-                       return a + (h([1,p.x]) - p.y) * variables[index];
-                   }, 0)
+                   * (1 / data.length)
+                   * delta
                   );
+            if(debug) console.log("index=" + index
+                                  + "; params[index]=" + params[index]
+                                  + "; last_params=" + last_params
+                                  + "; delta=" + delta);
         }
-
         if(params[1] == null || params[1] == NaN
            || params[1] == Infinity || params[1] == -Infinity) {
             console.log("invalid parameter! try adjusting change_rate, maybe increase it");
-            debug_param_data(last_params, params, h);
+            debug_param_data(working_set, last_params, params, h);
             break;
         }
         if(plot_cost)
-            cost_data.push([params[1], cost_of_param(params[1], points, h)]);
-        if(++i > max_iterations) {
+            cost_data.push([params[1], cost_of_hypothesis(h, working_set)]);
+        if(++i > iterations) {
             console.log("max iterations reached, bailing");
-            debug_param_data(last_params, params, h);
+            debug_param_data(working_set, last_params, params, h);
             break;
         }
     } while(!!params && !!last_params && (params<last_params || params>last_params));
@@ -129,24 +224,22 @@ function find_best_fitting_params_for_points(points) {
 }
 
 
-function debug_param_data(last_params, params, hyphothesis) {
+function debug_param_data(working_set, last_params, params, hyphothesis) {
     h = hypothesis;
     console.log("  last params: " + JSON.stringify(last_params));
     console.log("  params: " + JSON.stringify(params));
-    console.log("  total cost: " + JSON.stringify(points.reduce(function(a,p) {
-        return a + (h([1,p.x]) - p.y) * p.x;
-    }, 0)));
-    for(p in points) {
-        console.log("    point " + JSON.stringify(points[p]) + " cost: " + h([1,p.x]));
+    console.log("  total cost: " + cost_of_hypothesis(hypothesis, working_set));
+    for(idx in working_set) {
+        console.log("    point " + JSON.stringify(working_set[idx]) + " cost: " + h(working_set[idx].vars));
     }
 }
 
 
-function cost_of_param(param, points, hypothesis) {
-    var sum = points.reduce(function(acc, point) {
-        return acc + Math.pow(hypothesis([1,point.x]) - point.y, 2);
+function cost_of_hypothesis(hypothesis, working_set) {
+    var sum = working_set.reduce(function(acc, d) {
+        return acc + (hypothesis(d.vars) - d.goal);
     }, 0);
-    return ( 1 / ( 2 * points.length ) ) * sum;
+    return ( 1 / ( 2 * data.length ) ) * sum;
 };
 
 
@@ -169,26 +262,47 @@ function calculate_and_plot_points_and_costs() {
     var start_time = new Date;
 
     // First re-plat the points without the hypothesis line.
-    plot.setData([{
-        data: points.map(function(p){return [p.x, p.y]}),
-        color: "red",
-        label: "data points",
-        points: { show: true },
-        lines: { show: false },
-    }]);
-    plot.draw();
+    plot_points = house_data.map(function(d) {return [d['size'], d['price']]});
+    plot = $.plot(
+        $("#data_plot"),
+        [plot_points],
+        {
+            series: {
+                lines: { show: false },
+                points: { show: true },
+            },
+            grid: { hoverable: true, clickable: true },
+        });
 
     // Now find the best-fitting params for our set of points.
-    best_fit_params = find_best_fitting_params_for_points(points);
+    data = house_data.map(function(row) {
+        return house_data_fields.map(function(f) {
+            return row[f];
+        })
+    });
+
+    var best_fit_params = find_best_fitting_params_for_data(data);
     // And generate the points that will be used for the line that represents
     // our hypothesis on the points graph.
-    linear_func = create_linear_func(best_fit_params);
-    line_start = [points_range.x.min, Number(linear_func([1,points_range.x.min]))];
-    line_end   = [points_range.x.max, Number(linear_func([1,points_range.x.max]))];
+    field1_index = house_data_fields.indexOf('size');
+    field2_index = house_data_fields.indexOf('price');
+    console.log("best fit params: " + JSON.stringify(best_fit_params));
+    console.log("field1_index: " + field1_index);
+    console.log("field2_index: " + field2_index);
+    console.log("best_fit_params[field1_index]: " + best_fit_params[field1_index]);
+    console.log("best_fit_params[field2_index]: " + best_fit_params[field2_index]);
+    linear_func = create_linear_func([best_fit_params[field1_index],
+                                      best_fit_params[field2_index]]);
+    line_start = [plot.getXAxes()[0].min,
+                  Number(linear_func([1,plot.getXAxes()[0].min]))];
+    line_end   = [plot.getXAxes()[0].max,
+                  Number(linear_func([1,plot.getXAxes()[0].max]))];
 
+    console.log("line_start: " + JSON.stringify(line_start));
+    console.log("line_end: " + JSON.stringify(line_end));
     // Now plot points with the hypothesis line.
     plot.setData([{
-        data: points.map(function(p){return [p.x, p.y]}),
+        data: plot_points,
         color: "red",
         label: "data points",
     }, {
@@ -205,27 +319,7 @@ function calculate_and_plot_points_and_costs() {
 
 
 $(function () {
-    points = [
-        { x: 1, y: 1 },
-        { x: 2, y: 2 },
-        { x: 3, y: 3 },
-    ];
-
-    plot = $.plot(
-        $("#data_plot"),
-        [{}],
-        {
-            series: {
-                lines: { show: false },
-                points: { show: true },
-            },
-            grid: { hoverable: true, clickable: true },
-            xaxis: points_range.x,
-            yaxis: points_range.y,
-        });
     calculate_and_plot_points_and_costs();
-    $('#points').val(JSON.stringify(points, null, 2));
-
     var currentPoint = null;
     $("#data_plot").bind("plothover", function (event, pos, item) {
         currentPoint = { x: Math.round(pos.x * 100) / 100,
